@@ -20,7 +20,7 @@ async function openSitePage(
 	await page.goto(path, { waitUntil: "domcontentloaded" });
 	// 主题引擎初始化 + onload-animation 收敛（与 a11y 扫描同一前置条件）
 	await page.waitForFunction(() =>
-		document.documentElement.style
+		getComputedStyle(document.documentElement)
 			.getPropertyValue("--mc-primary")
 			.trim()
 			.startsWith("#"),
@@ -60,7 +60,7 @@ test.describe("文章内系列块", () => {
 			await expect(card).toContainText("Part 2 of 3");
 			await expect(card).toContainText("This post is part of the series");
 
-			// 组内上一篇/下一篇：目标与无障碍名称都带文章标题
+			// 名称次序保持可见内容在前，方向上下文作为末尾说明
 			const prev = card.locator(".series-card__row--prev");
 			const next = card.locator(".series-card__row--next");
 			await expect(prev).toHaveAttribute("href", "/posts/markdown/");
@@ -68,13 +68,11 @@ test.describe("文章内系列块", () => {
 				"href",
 				"/posts/markdown-enhancements/",
 			);
-			await expect(prev).toHaveAttribute(
-				"aria-label",
-				"Previous in series: Markdown Example",
+			await expect(prev).toHaveAccessibleName(
+				"Markdown Example Part 1 of 3 Previous in series",
 			);
-			await expect(next).toHaveAttribute(
-				"aria-label",
-				"Next in series: Shirone Markdown Enhancements",
+			await expect(next).toHaveAccessibleName(
+				"Shirone Markdown Enhancements Part 3 of 3 Next in series",
 			);
 			await expect(prev).toContainText("Part 1 of 3");
 			await expect(next).toContainText("Part 3 of 3");
@@ -99,6 +97,61 @@ test.describe("文章内系列块", () => {
 				nextCount,
 			);
 		}
+	});
+
+	test("bottom 位置紧贴正文：先于版权、分享与 Continue reading", async ({
+		page,
+	}) => {
+		await openSitePage(page, POST);
+
+		// 阅读顺序契约：cardPosition 默认 bottom = 正文之后、收尾区块（版权/分享/相关推荐）之前。
+		// 不锁具体像素位置，只锁 DOM 顺序——系列导航属于「继续读」，不应被署名/分发/推荐挤到页面末尾。
+		const closers: [string, string][] = [
+			["license", ".m3-license-card"],
+			["share", "[data-article-share]"],
+			["discovery", "[data-article-discovery]"],
+		];
+		const readingOrder = await page.evaluate((pairs) => {
+			const card = document.querySelector("[data-series-card]");
+			const content = document.querySelector(".markdown-content");
+			const follows = (anchor: Element, node: Element) =>
+				Boolean(
+					anchor.compareDocumentPosition(node) &
+						Node.DOCUMENT_POSITION_FOLLOWING,
+				);
+
+			let closersBeforeCard: string[] = [];
+			if (card) {
+				closersBeforeCard = pairs
+					.map(([name, selector]) => {
+						const node = document.querySelector(selector);
+						return node && !follows(card, node) ? name : null;
+					})
+					.filter((entry): entry is string => entry !== null);
+			}
+
+			return {
+				// 存在性：demo 文章必须同时有正文、系列块与三个收尾区块，
+				// 否则顺序断言会退化成空断言（缺哪个在 missingClosers 里点名）
+				hasContent: Boolean(content),
+				hasCard: Boolean(card),
+				missingClosers: pairs
+					.filter(([, selector]) => !document.querySelector(selector))
+					.map(([name]) => name),
+				// 顺序：系列块在正文之后、每个收尾区块之前
+				cardAfterContent: Boolean(content && card && follows(content, card)),
+				closersBeforeCard,
+			};
+		}, closers);
+
+		// 存在性断言放在顺序断言之前：收尾区块没渲染时先在这里失败并点名，
+		// 不会被误读成「顺序错了」
+		expect(readingOrder.hasContent).toBe(true);
+		expect(readingOrder.hasCard).toBe(true);
+		expect(readingOrder.missingClosers).toEqual([]);
+
+		expect(readingOrder.cardAfterContent).toBe(true);
+		expect(readingOrder.closersBeforeCard).toEqual([]);
 	});
 });
 
