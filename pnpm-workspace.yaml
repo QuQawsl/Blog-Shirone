@@ -42,8 +42,10 @@ allowBuilds:
   esbuild: true
   sharp: true
   swup: true
+  workerd: true
 onlyBuiltDependencies:
   - "@parcel/watcher"
   - esbuild
   - sharp
   - swup
+  - workerd

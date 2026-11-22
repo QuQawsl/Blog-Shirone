@@ -43,3 +43,17 @@ test("KaTeX keeps one non-deprecated patched version across manifest, override a
 	assert.equal(lockedDependency.specifier, manifestSpecifier);
 	assert.equal(version, manifestSpecifier);
 });
+
+test("Cloudflare deployment keeps Wrangler and workerd build scripts available", () => {
+	assert.equal(packageManifest.devDependencies.wrangler, "4.59.1");
+	assert.equal(workspace.allowBuilds.workerd, true);
+	assert.ok(workspace.onlyBuiltDependencies.includes("workerd"));
+	assert.equal(
+		lockfile.importers["."].devDependencies.wrangler.specifier,
+		"4.59.1",
+	);
+	assert.match(
+		lockfile.importers["."].devDependencies.wrangler.version,
+		/^4\.59\.1/,
+	);
+});
